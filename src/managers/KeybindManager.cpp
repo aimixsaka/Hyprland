@@ -25,6 +25,8 @@ CKeybindManager::CKeybindManager() {
     m_mDispatchers["killactive"]                     = killActive;
     m_mDispatchers["closewindow"]                    = kill;
     m_mDispatchers["togglefloating"]                 = toggleActiveFloating;
+    m_mDispatchers["setfloating"]                    = setActiveFloating;
+    m_mDispatchers["settiled"]                       = setActiveTiled;
     m_mDispatchers["workspace"]                      = changeworkspace;
     m_mDispatchers["renameworkspace"]                = renameWorkspace;
     m_mDispatchers["fullscreen"]                     = fullscreenActive;
@@ -227,7 +229,6 @@ bool CKeybindManager::tryMoveFocusToMonitor(CMonitor* monitor) {
     const auto PNEWMAINWORKSPACE = g_pCompositor->getWorkspaceByID(monitor->activeWorkspace);
 
     g_pInputManager->unconstrainMouse();
-    g_pCompositor->setActiveMonitor(monitor);
     PNEWMAINWORKSPACE->rememberPrevWorkspace(PWORKSPACE);
 
     const auto PNEWWORKSPACE = monitor->specialWorkspaceID != 0 ? g_pCompositor->getWorkspaceByID(monitor->specialWorkspaceID) : PNEWMAINWORKSPACE;
@@ -236,10 +237,15 @@ bool CKeybindManager::tryMoveFocusToMonitor(CMonitor* monitor) {
     if (PNEWWINDOW) {
         g_pCompositor->focusWindow(PNEWWINDOW);
         g_pCompositor->warpCursorTo(PNEWWINDOW->middle());
+
+        g_pInputManager->m_pForcedFocus = PNEWWINDOW;
+        g_pInputManager->simulateMouseMovement();
+        g_pInputManager->m_pForcedFocus = nullptr;
     } else {
         g_pCompositor->focusWindow(nullptr);
         g_pCompositor->warpCursorTo(monitor->middle());
     }
+    g_pCompositor->setActiveMonitor(monitor);
 
     return true;
 }
@@ -530,7 +536,7 @@ bool CKeybindManager::handleKeybinds(const uint32_t modmask, const SPressedKeyWi
             const auto KBKEY = xkb_keysym_from_name(k.key.c_str(), XKB_KEYSYM_CASE_INSENSITIVE);
 
             if (KBKEY == 0) {
-                // Keysym failed to resolve from the key name of the the currently iterated bind.
+                // Keysym failed to resolve from the key name of the currently iterated bind.
                 // This happens for names such as `switch:off:Lid Switch` as well as some keys
                 // (such as yen and ro).
                 //
@@ -792,9 +798,9 @@ uint64_t CKeybindManager::spawnRaw(std::string args) {
     close(socket[1]);
     read(socket[0], &grandchild, sizeof(grandchild));
     close(socket[0]);
-    // clear child and leave child to init
+    // clear child and leave grandchild to init
     waitpid(child, NULL, 0);
-    if (child < 0) {
+    if (grandchild < 0) {
         Debug::log(LOG, "Fail to create the second fork");
         return 0;
     }
@@ -824,6 +830,18 @@ void CKeybindManager::clearKeybinds() {
 }
 
 void CKeybindManager::toggleActiveFloating(std::string args) {
+    return toggleActiveFloatingCore(args, std::nullopt);
+}
+
+void CKeybindManager::setActiveFloating(std::string args) {
+    return toggleActiveFloatingCore(args, true);
+}
+
+void CKeybindManager::setActiveTiled(std::string args) {
+    return toggleActiveFloatingCore(args, false);
+}
+
+void toggleActiveFloatingCore(std::string args, std::optional<bool> floatState) {
     CWindow* PWINDOW = nullptr;
 
     if (args != "active" && args.length() > 1)
@@ -834,12 +852,15 @@ void CKeybindManager::toggleActiveFloating(std::string args) {
     if (!PWINDOW)
         return;
 
+    if (floatState.has_value() && floatState == PWINDOW->m_bIsFloating)
+        return;
+
     // remove drag status
     g_pInputManager->currentlyDraggedWindow = nullptr;
 
     if (PWINDOW->m_sGroupData.pNextWindow && PWINDOW->m_sGroupData.pNextWindow != PWINDOW) {
+        const auto PCURRENT = PWINDOW->getGroupCurrent();
 
-        const auto PCURRENT     = PWINDOW->getGroupCurrent();
         PCURRENT->m_bIsFloating = !PCURRENT->m_bIsFloating;
         g_pLayoutManager->getCurrentLayout()->changeWindowFloatingMode(PCURRENT);
 
@@ -2016,6 +2037,9 @@ void CKeybindManager::pinActive(std::string args) {
     const auto PWORKSPACE = g_pCompositor->getWorkspaceByID(PWINDOW->m_iWorkspaceID);
 
     PWORKSPACE->m_pLastFocusedWindow = g_pCompositor->vectorToWindowUnified(g_pInputManager->getMouseCoordsInternal(), RESERVED_EXTENTS | INPUT_EXTENTS);
+
+    g_pEventManager->postEvent(SHyprIPCEvent{"pin", std::format("{:x},{}", (uintptr_t)PWINDOW, (int)PWINDOW->m_bPinned)});
+    EMIT_HOOK_EVENT("pin", PWINDOW);
 }
 
 void CKeybindManager::mouse(std::string args) {

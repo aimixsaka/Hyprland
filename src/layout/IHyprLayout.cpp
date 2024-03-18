@@ -217,7 +217,27 @@ void IHyprLayout::onBeginDragWindow() {
     m_vLastDragXY          = m_vBeginDragXY;
 
     // get the grab corner
-    if (m_vBeginDragXY.x < m_vBeginDragPositionXY.x + m_vBeginDragSizeXY.x / 2.0) {
+    static auto RESIZECORNER = CConfigValue<Hyprlang::INT>("general:resize_corner");
+    if (*RESIZECORNER != 0 && *RESIZECORNER <= 4 && DRAGGINGWINDOW->m_bIsFloating) {
+        switch (*RESIZECORNER) {
+            case 1:
+                m_eGrabbedCorner = CORNER_TOPLEFT;
+                g_pInputManager->setCursorImageUntilUnset("nw-resize");
+                break;
+            case 2:
+                m_eGrabbedCorner = CORNER_TOPRIGHT;
+                g_pInputManager->setCursorImageUntilUnset("ne-resize");
+                break;
+            case 3:
+                m_eGrabbedCorner = CORNER_BOTTOMRIGHT;
+                g_pInputManager->setCursorImageUntilUnset("se-resize");
+                break;
+            case 4:
+                m_eGrabbedCorner = CORNER_BOTTOMLEFT;
+                g_pInputManager->setCursorImageUntilUnset("sw-resize");
+                break;
+        }
+    } else if (m_vBeginDragXY.x < m_vBeginDragPositionXY.x + m_vBeginDragSizeXY.x / 2.0) {
         if (m_vBeginDragXY.y < m_vBeginDragPositionXY.y + m_vBeginDragSizeXY.y / 2.0) {
             m_eGrabbedCorner = CORNER_TOPLEFT;
             g_pInputManager->setCursorImageUntilUnset("nw-resize");
@@ -460,6 +480,11 @@ void IHyprLayout::changeWindowFloatingMode(CWindow* pWindow) {
         pWindow->m_iMonitorID = PNEWMON->ID;
         pWindow->moveToWorkspace(PNEWMON->specialWorkspaceID != 0 ? PNEWMON->specialWorkspaceID : PNEWMON->activeWorkspace);
         pWindow->updateGroupOutputs();
+
+        const auto PWORKSPACE = g_pCompositor->getWorkspaceByID(PNEWMON->specialWorkspaceID != 0 ? PNEWMON->specialWorkspaceID : PNEWMON->activeWorkspace);
+
+        if (PWORKSPACE->m_bHasFullscreenWindow)
+            g_pCompositor->setWindowFullscreen(g_pCompositor->getFullscreenWindowOnWorkspace(PWORKSPACE->m_iID), false);
 
         // save real pos cuz the func applies the default 5,5 mid
         const auto PSAVEDPOS  = pWindow->m_vRealPosition.goal();

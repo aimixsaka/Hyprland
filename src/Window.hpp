@@ -296,6 +296,7 @@ class CWindow {
     Vector2D                 m_vOriginalClosedPos;  // these will be used for calculations later on in
     Vector2D                 m_vOriginalClosedSize; // drawing the closing animations
     SWindowDecorationExtents m_eOriginalClosedExtents;
+    bool                     m_bAnimatingIn = false;
 
     // For pinned (sticky) windows
     bool m_bPinned = false;
@@ -395,6 +396,7 @@ class CWindow {
     bool                     canBeTorn();
     bool                     shouldSendFullscreenState();
     void                     setSuspended(bool suspend);
+    bool                     visibleOnMonitor(CMonitor* pMonitor);
 
     int                      getRealBorderSize();
     void                     updateSpecialRenderData();
